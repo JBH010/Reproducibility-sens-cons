@@ -7,7 +7,7 @@ import ray
 from estimator import MulticlassEstimator
 
 
-@ray.remote(num_gpus=1)  # Allocate 1 GPU per actor (or more for multi-GPU)
+@ray.remote(num_gpus=1) 
 class LLMModelActor:
     """
     Ray Actor that loads the LLM model once and serves inference requests.
