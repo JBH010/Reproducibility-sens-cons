@@ -156,9 +156,9 @@ def run_grid_search(
     As,
     temp_answers,
     class_labels,
-    class_extractor_fun,
+    class_extractor_fun,    
     results_folder,
-    num_actors=4,
+    num_actors,
 ):
     """
     Run Grid Search on the given samples with proper Ray parallelization.
@@ -178,48 +178,27 @@ def run_grid_search(
         num_actors: Number of Ray actors (GPUs) to use for parallel processing
     """
     print("→ Entered run_grid_search function!", flush=True)
-    sys.stdout.flush()
-    
-    print("→ Importing torch...", flush=True)
-    sys.stdout.flush()
+   
     import torch
-    print("✓ torch imported", flush=True)
-    sys.stdout.flush()
-    
-    print("→ Importing ray...", flush=True)
-    sys.stdout.flush()
     import ray
-    print("✓ ray imported", flush=True)
-    sys.stdout.flush()
-    
-    print("→ Importing model_actor...", flush=True)
-    sys.stdout.flush()
     from model_actor import LLMModelActor
-    print("✓ model_actor imported", flush=True)
-    sys.stdout.flush()
     
-    # Initialize Ray ONCE at the start
-    print("→ Initializing Ray...", flush=True)
-    sys.stdout.flush()
-    ray.shutdown()  # Clean up any existing instance
+    ray.shutdown()  
 
-    # Detect available GPUs
     num_gpus_available = torch.cuda.device_count() if torch.cuda.is_available() else 0
     print(f"Detected {num_gpus_available} physical GPUs", flush=True)
 
-    # Don't limit num_actors - allow fractional GPU allocation
     print(f"Will use {num_actors} actor(s) (with fractional GPU allocation)", flush=True)
 
     # Initialize Ray
     ray.init(
         ignore_reinit_error=True,
-        num_cpus=120,  # Adjust based on your system
+        num_cpus=120,  
         num_gpus=num_gpus_available,
     )
     print("Ray initialized successfully", flush=True)
 
     try:
-        # CREATE ACTORS ONCE PER LLM - OUTSIDE ALL LOOPS
         for llm in llms:
             print(f"\n{'='*80}")
             print(f"Creating {num_actors} Model Actors for {llm}...")
@@ -228,20 +207,18 @@ def run_grid_search(
             model_actors = [
                 LLMModelActor.remote(
                     llm=llm,
-                    temperature_question=0.0,  # Default value
-                    num_questions=30,  # Max value we'll use
+                    temperature_question=0.0, 
+                    num_questions=30,  
                     llm_rephraser=None,
                 )
                 for _ in range(num_actors)
             ]
             print(f"Created {num_actors} Model Actors", flush=True)
 
-            # Wait for all actors to be ready
             print("Waiting for all actors to finish loading models...", flush=True)
             ray.get([actor.ready.remote() for actor in model_actors])
             print("✓ All actors ready!\n", flush=True)
 
-            # NOW LOOP THROUGH PROMPT TYPES WITH SAME ACTORS
             for prompt_type, prompt_original in prompt_types.items():
                 data_dict = {}
                 filename = f"results_{prompt_type}.json"
@@ -254,7 +231,7 @@ def run_grid_search(
                     with open(Path(results_folder, filename), "r") as f:
                         data_dict = json.load(f)
 
-                if "mixtral" in llm:  # move "system" text to "user"
+                if "mixtral" in llm:  
                     prompt = prompt_original[1:]
                     prompt[0][1] = f"{prompt_original[0][1]} {prompt[0][1]}"
                     print(prompt)
@@ -266,7 +243,6 @@ def run_grid_search(
                         key_questions = f"{llm}_{Q}_{temp_question}"
                         simple_filename = f"results_simple.json"
 
-                        # Generate questions using first actor (only needs to be done once)
                         if (
                             prompt_type != "simple"
                             and os.path.exists(Path(results_folder, simple_filename))
@@ -283,7 +259,6 @@ def run_grid_search(
                         else:
                             if key_questions not in data_dict:
                                 print(f"Generating {Q} alternative questions...", flush=True)
-                                # Use first actor to generate questions
                                 alt_questions = ray.get(
                                     model_actors[0].generate_questions.remote(
                                         question=question_to_rewrite
@@ -298,7 +273,6 @@ def run_grid_search(
                             else:
                                 alt_questions = data_dict[key_questions]
 
-                        # Helper function to replace questions locally
                         def replace_question_local(prompt, old_q, new_q):
                             import copy
                             modified = copy.deepcopy(prompt)
@@ -307,7 +281,6 @@ def run_grid_search(
                                     message[1] = message[1].replace(old_q, new_q)
                             return modified
 
-                        # Create modified prompts locally (no GPU needed)
                         modified_prompts = [
                             replace_question_local(prompt, question_to_rewrite, alt_question)
                             for alt_question in alt_questions
@@ -315,8 +288,7 @@ def run_grid_search(
 
                         for A in As:
                             for temp_answer in temp_answers:
-                                # Process in small batches to avoid overwhelming Ray
-                                batch_size = 20  # Process 10 samples at a time
+                                batch_size = 20  
                                 total_samples = len(samples)
                                 completed_count = 0
 
@@ -368,8 +340,6 @@ def run_grid_search(
                                             answers = ray.get(future, timeout=1800)  # 30 min timeout per sample
                                             print(f"✓ Got answers for {key}", flush=True)
 
-                                            # OPTIMIZATION: Just save raw answers - process later!
-                                            # Convert answers dict to serializable format
                                             serializable_answers = {}
                                             for ans_key, ans_value in answers.items():
                                                 if hasattr(ans_value, 'content'):
@@ -386,7 +356,7 @@ def run_grid_search(
                                                 target=target,
                                                 temp_question=float(tmp_q),
                                                 temp_answer=float(tmp_a),
-                                                raw_answers=serializable_answers,  # Save raw answers only!
+                                                raw_answers=serializable_answers,
                                             )
 
                                             completed_count += 1
@@ -401,7 +371,6 @@ def run_grid_search(
                                             traceback.print_exc()
                                             continue
 
-                                    # Save after each batch
                                     json_data = json.dumps(data_dict)
                                     with open(Path(results_folder, filename), "w") as f:
                                         f.write(json_data)

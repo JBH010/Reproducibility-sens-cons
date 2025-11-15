@@ -4,39 +4,13 @@ print("PYTHON SCRIPT STARTED!", flush=True)
 print(f"Python version: {sys.version}", flush=True)
 print("="*80, flush=True)
 sys.stdout.flush()
-
 import os
-print("✓ Importing os...", flush=True)
-import json
-print("✓ Importing json...", flush=True)
-from pathlib import Path
-print("✓ Importing Path...", flush=True)
-from typing import List
-print("✓ Importing typing...", flush=True)
-
-print("✓ About to import evaluator...", flush=True)
-sys.stdout.flush()
-from evaluator import run_grid_search
-print("✓ Evaluator imported!", flush=True)
-sys.stdout.flush()
-
-# Remove proxy if present
-print("✓ Removed proxy", flush=True)
-sys.stdout.flush()
-
-# ... rest of your code ...
-import os
-import json
 from pathlib import Path
 from typing import List
 from evaluator import run_grid_search
-
+import json
 # Remove proxy if present
 os.environ.pop('http_proxy', None)
-
-# ==============================================================================
-# Dataset Parsing Functions
-# ==============================================================================
 
 def parse_CB(input_file: Path) -> List[dict]:
     """Parse CB (CommitmentBank) dataset from JSONL file."""
@@ -93,33 +67,6 @@ def parse_RTE(input_file: Path) -> List[dict]:
     return data_list
 
 
-def parse_TREC(input_file: Path) -> List[dict]:
-    """Parse TREC dataset from text file."""
-    data_list = []
-    
-    with open(input_file, 'r') as file:
-        for idx, line in enumerate(file, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            
-            # TREC format: label:text
-            parts = line.split(':', 1)
-            if len(parts) != 2:
-                continue
-            
-            label, text = parts[0], parts[1].strip()
-            
-            new_entry = {
-                "id": idx,
-                "input": text,
-                "class": label
-            }
-            
-            data_list.append(new_entry)
-    
-    return data_list
-
 
 def parse_DBPEDIA(input_file: Path, classes_file: Path) -> List[dict]:
     """Parse DBPEDIA dataset from CSV file."""
@@ -172,11 +119,6 @@ def parse_WOS46985(input_file: Path, target_file: Path, class_labels: List[str])
         data_list.append(sample)
     
     return data_list
-
-
-# ==============================================================================
-# Dataset Configurations
-# ==============================================================================
 
 def get_CB_config():
     """Get configuration for CB dataset."""
@@ -426,11 +368,6 @@ def get_WOS46985_config():
         "class_extractor_fun": class_extractor_fun
     }
 
-
-# ==============================================================================
-# Main Execution
-# ==============================================================================
-
 def run_all_datasets(
     llms: List[str] = None,
     Qs: List[int] = None,
@@ -462,7 +399,7 @@ def run_all_datasets(
     if temp_answers is None:
         temp_answers = [0.]
     if datasets is None:
-        datasets = ['CB', 'RTE', 'TREC', 'DBPEDIA', 'WOS46985']
+        datasets = ['CB', 'RTE', 'DBPEDIA', 'WOS46985']
     
     # Dataset configurations
     dataset_configs = {
@@ -479,13 +416,6 @@ def run_all_datasets(
             'results_folder': Path('./data/RTE_RESULTS'),
             'parser': parse_RTE,
             'config_fn': get_RTE_config
-        },
-        'TREC': {
-            'data_file': Path('./data/TREC/train.txt'),
-            'processed_file': Path('./data/TREC_RESULTS/data.json'),
-            'results_folder': Path('./data/TREC_RESULTS'),
-            'parser': parse_TREC,
-            'config_fn': get_TREC_config
         },
         'DBPEDIA': {
             'data_file': Path('./data/DBPEDIA/test.csv'),
@@ -504,8 +434,7 @@ def run_all_datasets(
             'config_fn': get_WOS46985_config
         }
     }
-    
-    # Run grid search for each dataset
+                
     for dataset_name in datasets:
         if dataset_name not in dataset_configs:
             print(f"Warning: Unknown dataset '{dataset_name}', skipping...")
@@ -519,30 +448,21 @@ def run_all_datasets(
         results_folder = config['results_folder']
         processed_file = config['processed_file']
         
-        # Create results folder if it doesn't exist
         results_folder.mkdir(parents=True, exist_ok=True)
-        
-        # Load or parse dat
         
         if processed_file.exists():
             print(f"Loading processed data from {processed_file}")
             with open(processed_file, 'r') as f:
                 loaded_data = json.load(f)
-                # Handle both formats: plain list or tuple-as-list [data_list, one_shot_examples]
                 if isinstance(loaded_data, list) and len(loaded_data) == 2 and isinstance(loaded_data[0], list) and isinstance(loaded_data[1], list):
-                    # This is the (data_list, one_shot_examples) format from DBPEDIA/WOS
                     data_list = loaded_data[0]
                     print(f"Loaded data with one-shot examples (format from balanced sampling)")
                 else:
-                    # Plain list format from CB/RTE/TREC
                     data_list = loaded_data
         else:
             print(f"Parsing data from {config['data_file']}")
             if dataset_name == 'WOS46985':
-                # Special handling for WOS46985
                 cfg = config['config_fn']()
-                # Note: WOS46985 uses X.zip, might need special extraction
-                # For now, assume X.txt exists after extraction
                 data_file = Path('./data/WOS46985/X.txt')
                 if not data_file.exists():
                     print(f"Warning: {data_file} not found. Skipping WOS46985.")
@@ -555,27 +475,22 @@ def run_all_datasets(
             else:
                 data_list = config['parser'](config['data_file'])
             
-            # Save processed data
             json_data = json.dumps(data_list)
             with open(processed_file, 'w') as f:
                 f.write(json_data)
         
         print(f"Loaded {len(data_list)} samples")
         
-        # Get dataset-specific configuration FIRST (needed for sampling)
         dataset_cfg = config['config_fn']()
         
-        # Balance dataset for large datasets (DBPEDIA and WOS46985) - same as original paper
         if dataset_name in ['DBPEDIA', 'WOS46985'] and len(data_list) > 2000:
             import random
             
             print(f"Balancing dataset: sampling 2000 samples from {len(data_list)} total samples...")
-            random.seed(42)  # Set seed for reproducibility
+            random.seed(42)  
             
-            # Shuffle the samples
             random.shuffle(data_list)
             
-            # Exclude N/A class from balancing
             active_class_labels = [c for c in dataset_cfg['class_labels'] if c != 'N/A']
             n_samples_per_class = 2000 // len(active_class_labels)
             
@@ -591,32 +506,28 @@ def run_all_datasets(
                 else:
                     remaining_samples.append(sample)
             
-            # If we still need more samples to reach 2000, randomly sample from remaining samples
             while len(balanced_dataset) < 2000 and remaining_samples:
                 random_sample = random.choice(remaining_samples)
                 balanced_dataset.append(random_sample)
                 remaining_samples.remove(random_sample)
             
-            data_list = balanced_dataset[:2000]  # Ensure exactly 2000 samples
+            data_list = balanced_dataset[:2000]  
             
             print(f"Balanced dataset: {len(data_list)} samples")
             for label in active_class_labels:
                 count = sum(1 for s in data_list if s['class'] == label)
                 print(f"  Class '{label}': {count} samples")
 
-        # FILTER to only run specific prompt types (skip 'simple')
         all_prompt_types = dataset_cfg['prompt_types']
         dataset_cfg['prompt_types'] = {
             k: v for k, v in all_prompt_types.items()
-            if k in ['fewshot', "instruct", "simple"]  # Note: it's 'fewshot' not '1-shot'
+            if k in ['fewshot', "instruct", "simple"]  
         }
         
         print(f"Running prompt types: {list(dataset_cfg['prompt_types'].keys())}")
         
-        # Prepare samples
         samples = data_list
         
-        # Run grid search
         print(f"Starting grid search for {dataset_name}...", flush=True)
         try:
             run_grid_search(
@@ -641,8 +552,7 @@ def run_all_datasets(
 
 
 if __name__ == "__main__":
-    # Run only instruct and fewshot prompt types for RTE with Mixtral
     run_all_datasets(
         llms=["mixtral"],
-        datasets=["DBPEDIA"],
+        datasets=["CB", "RTE", "DBPEDIA", "WOS46985"],
     )
