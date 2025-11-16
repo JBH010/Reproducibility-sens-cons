@@ -2,6 +2,14 @@
 
 Reproduction of sensitivity and consistency experiments for Large Language Models.
 
+IMPORTANT NOTE!!!!!
+the version of this on github is missing the following files due to size limits:
+-DBPEDIA_RESULTS/results_simple.json
+-DBPEDIA_RESULTS/results_fewshot.json
+-DBPEDIA_RESULTS/results_instruct.json
+
+THE VERSION SUBMITTED ON LEARNIT IS COMPLETE AND NOT MISSING THESE FILES, PLEASE USE THE VERSION FROM LEARNIT.
+
 ## Setup
 
 Install dependencies:
